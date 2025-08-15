@@ -19,8 +19,7 @@ class BlockchainGamesSpider(scrapy.Spider):
     }
 
     def start_requests(self):
-        # 61 pages
-        for i in range(1, 2):
+        for i in range(1, 5):  # all pages
             url = f"https://playtoearn.com/blockchaingames?p={i}"
             yield scrapy.Request(
                 url,
@@ -46,21 +45,35 @@ class BlockchainGamesSpider(scrapy.Spider):
             url = row.css("div.__TextViewGameContainer a.dapp_detaillink::attr(href)").get()
             item["Name"] = (name_tag or "").strip()
 
-            # Device / Blockchain
+            #  Blockchain
             device = row.css("div.TableGameBlockchainItems a::attr(title)").get()
             item["Device"] = (device or "").strip()
 
-            # Categories (you can adjust mapping if needed)
+            # Categories (adjust if needed)
             categories = row.css("div.__TableCategoryTags a div.__TagItem::text").getall()
             item["Blockchain"] = ", ".join([c.strip() for c in categories if c.strip()])
 
-            # Placeholder fields (update selectors if data available)
-            item["Status"] = ""
-            item["NFT"] = ""
-            item["F2P"] = ""
-            item["P2E"] = ""
-            item["P2E_Score"] = ""
+            # Status using your new selector
+            status = row.css("td a.__ButtonStatusLive::text").get()
+            item["Status"] = (status or "").strip()
 
+            # NFT
+            nft = row.css("td a.buttonNo[aria-label*='NFT']::attr(aria-label)").get()
+            item["NFT"] = (nft or "").replace(" NFT Support", "").strip()
+
+            # F2P
+            f2p = row.css("td a.buttonNo[aria-label*='FreeToPlay']::attr(aria-label)").get()
+            item["F2P"] = (f2p or "").strip()
+
+            # P2E
+            p2e = row.css("td a.buttonYes[aria-label*='Play-To-Earn']::attr(aria-label)").get()
+            item["P2E"] = (p2e or "").strip()
+
+            # P2E Score
+            score = row.css("td span.dailychangepercentage::text").get()
+            item["P2E_Score"] = (score or "").strip()
+
+            # Follow detail page if exists
             if url:
                 url = urljoin(response.url, url)
                 yield scrapy.Request(
