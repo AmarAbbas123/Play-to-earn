@@ -7,19 +7,19 @@ class BlockchainGamesSpider(scrapy.Spider):
     allowed_domains = ["playtoearn.com"]
 
     custom_settings = {
-        "FEED_EXPORT_FIELDS": [
-            "Name","Blockchain","Device",
-            "Status","NFT","F2P","P2E","P2E_Score"
-        ],
-        "ROBOTSTXT_OBEY": True,
-        "DOWNLOAD_DELAY": 0.25,
-        "AUTOTHROTTLE_ENABLED": True,
-        "CONCURRENT_REQUESTS": 8,
-        "RETRY_TIMES": 2,
-    }
+    "FEED_EXPORT_FIELDS": [
+        "Name","Description","Blockchain","Device",
+        "Status","NFT","F2P","P2E","P2E_Score"
+    ],
+    "ROBOTSTXT_OBEY": True,
+    "DOWNLOAD_DELAY": 0.25,
+    "AUTOTHROTTLE_ENABLED": True,
+    "CONCURRENT_REQUESTS": 8,
+    "RETRY_TIMES": 2,
+}
 
     def start_requests(self):
-        for i in range(1, 5):  # all pages
+        for i in range(1, 2):  # all pages
             url = f"https://playtoearn.com/blockchaingames?p={i}"
             yield scrapy.Request(
                 url,
@@ -43,9 +43,13 @@ class BlockchainGamesSpider(scrapy.Spider):
             # Name & URL
             name_tag = row.css("div.__TextViewGameContainer a.dapp_detaillink b::text").get()
             url = row.css("div.__TextViewGameContainer a.dapp_detaillink::attr(href)").get()
-            item["Name"] = (name_tag or "").strip()
+            description = row.css("div.__TextViewGameContainer > span::text").get()
 
-            #  Blockchain
+
+            item["Name"] = (name_tag or "").strip()
+            item["Description"] = (description or "").strip()  # <-- NEW FIELD
+
+           # Blockchain
             device = row.css("div.TableGameBlockchainItems a::attr(title)").get()
             item["Device"] = (device or "").strip()
 
@@ -53,7 +57,7 @@ class BlockchainGamesSpider(scrapy.Spider):
             categories = row.css("div.__TableCategoryTags a div.__TagItem::text").getall()
             item["Blockchain"] = ", ".join([c.strip() for c in categories if c.strip()])
 
-            # Status using your new selector
+           # Status using your new selector
             status = row.css("td a.__ButtonStatusLive::text").get()
             item["Status"] = (status or "").strip()
 
@@ -99,7 +103,9 @@ class BlockchainGamesSpider(scrapy.Spider):
         name = response.css("h1::text, .game-title::text").get()
         if name:
             item["Name"] = name.strip()
-
+        long_desc = response.css("div.game_desc p::text, div.game_desc::text").getall()
+        if long_desc:
+            item["Description"] = " ".join([d.strip() for d in long_desc if d.strip()])
         # Additional details
         chains = response.css(".chain::text, .badge-chain::text, .blockchains a::text, .blockchains::text").getall()
         devs = response.css(".device::text, .badge-device::text, .devices a::text, .devices::text").getall()
