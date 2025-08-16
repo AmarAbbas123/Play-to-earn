@@ -7,77 +7,77 @@ class BlockchainGamesSpider(scrapy.Spider):
     allowed_domains = ["playtoearn.com"]
 
     custom_settings = {
-    "FEED_EXPORT_FIELDS": [
-        "Name","Description","Blockchain","Device",
-        "Status","NFT","F2P","P2E","P2E_Score"
-    ],
-    "ROBOTSTXT_OBEY": True,
-    "DOWNLOAD_DELAY": 0.25,
-    "AUTOTHROTTLE_ENABLED": True,
-    "CONCURRENT_REQUESTS": 8,
-    "RETRY_TIMES": 2,
-}
+        "FEED_EXPORT_FIELDS": [
+            "Name","Description","Blockchain","Device",
+            "Status","NFT","F2P","P2E","P2E_Score"
+        ],
+        "FEED_FORMAT": "csv",
+        "FEED_URI": "blockchain_games.csv",
+        "ROBOTSTXT_OBEY": True,
+        "DOWNLOAD_DELAY": 0.25,
+        "AUTOTHROTTLE_ENABLED": True,
+        "CONCURRENT_REQUESTS": 8,
+        "RETRY_TIMES": 2,
+    }
 
     def start_requests(self):
-        for i in range(1, 2):  # all pages
+        # Change the range to cover all pages
+        for i in range(1, 2):
             url = f"https://playtoearn.com/blockchaingames?p={i}"
             yield scrapy.Request(
                 url,
                 meta={
                     "playwright": True,
-                    "playwright_page_methods": [
-                        ("wait_for_load_state", "networkidle")
-                    ],
+                    "playwright_page_methods": [("wait_for_load_state", "networkidle")],
                     "playwright_context": "default"
                 },
                 callback=self.parse
             )
 
     def parse(self, response):
-        rows = response.css("tbody.__TableItemsSwiper tr")
+        rows = response.css("div.TableGameItem")
         self.logger.info(f"Page URL: {response.url}, rows found: {len(rows)}")
 
         for row in rows:
             item = GameItem()
 
-            # Name & URL
+            # Name & short description
             name_tag = row.css("div.__TextViewGameContainer a.dapp_detaillink b::text").get()
             url = row.css("div.__TextViewGameContainer a.dapp_detaillink::attr(href)").get()
             description = row.css("div.__TextViewGameContainer > span::text").get()
 
-
             item["Name"] = (name_tag or "").strip()
-            item["Description"] = (description or "").strip()  # <-- NEW FIELD
+            item["Description"] = (description or "").strip()
 
-           # Blockchain
+            # Blockchain & Device
+            categories = row.css("div.__TableCategoryTags a div.__TagItem::text").getall()
+            item["Blockchain"] = ", ".join([c.strip() for c in categories if c.strip()])
             device = row.css("div.TableGameBlockchainItems a::attr(title)").get()
             item["Device"] = (device or "").strip()
 
-            # Categories (adjust if needed)
-            categories = row.css("div.__TableCategoryTags a div.__TagItem::text").getall()
-            item["Blockchain"] = ", ".join([c.strip() for c in categories if c.strip()])
-
-           # Status using your new selector
-            status = row.css("td a.__ButtonStatusLive::text").get()
+            # Status
+            status = row.css("a.__ButtonStatusLive::text").get()
             item["Status"] = (status or "").strip()
 
             # NFT
-            nft = row.css("td a.buttonNo[aria-label*='NFT']::attr(aria-label)").get()
+            nft = row.css("a[aria-label*='NFT']::attr(aria-label)").get()
             item["NFT"] = (nft or "").replace(" NFT Support", "").strip()
 
-            # F2P
-            f2p = row.css("td a.buttonNo[aria-label*='FreeToPlay']::attr(aria-label)").get()
-            item["F2P"] = (f2p or "").strip()
+            # F2P (Yes/No)
+            f2p_yes = row.css("a[aria-label*='Free-To-Play'].buttonYes::text").get()
+            f2p_no = row.css("a[aria-label*='Free-To-Play'].buttonNo::text").get()
+            item["F2P"] = "Yes" if f2p_yes else "No" if f2p_no else ""
 
-            # P2E
-            p2e = row.css("td a.buttonYes[aria-label*='Play-To-Earn']::attr(aria-label)").get()
-            item["P2E"] = (p2e or "").strip()
+            # P2E (Yes/No)
+            p2e_yes = row.css("a.buttonYes[aria-label*='Play-To-Earn']::text").get()
+            p2e_no = row.css("a.buttonNo[aria-label*='Play-To-Earn']::text").get()
+            item["P2E"] = "Yes" if p2e_yes else "No" if p2e_no else ""
 
             # P2E Score
-            score = row.css("td span.dailychangepercentage::text").get()
+            score = row.css("span.dailychangepercentage::text").get()
             item["P2E_Score"] = (score or "").strip()
 
-            # Follow detail page if exists
+            # Follow detail page if exists for longer description
             if url:
                 url = urljoin(response.url, url)
                 yield scrapy.Request(
@@ -85,9 +85,7 @@ class BlockchainGamesSpider(scrapy.Spider):
                     meta={
                         "item": item,
                         "playwright": True,
-                        "playwright_page_methods": [
-                            ("wait_for_load_state", "networkidle")
-                        ],
+                        "playwright_page_methods": [("wait_for_load_state", "networkidle")],
                         "playwright_context": "default"
                     },
                     callback=self.parse_game,
@@ -103,16 +101,29 @@ class BlockchainGamesSpider(scrapy.Spider):
         name = response.css("h1::text, .game-title::text").get()
         if name:
             item["Name"] = name.strip()
+
+        # Long description from detail page
         long_desc = response.css("div.game_desc p::text, div.game_desc::text").getall()
         if long_desc:
             item["Description"] = " ".join([d.strip() for d in long_desc if d.strip()])
-        # Additional details
-        chains = response.css(".chain::text, .badge-chain::text, .blockchains a::text, .blockchains::text").getall()
-        devs = response.css(".device::text, .badge-device::text, .devices a::text, .devices::text").getall()
+
+        # Other fields from detail page
+        chains = response.css(".chain::text, .badge-chain::text, .blockchains a::text").getall()
+        devs = response.css(".device::text, .badge-device::text, .devices a::text").getall()
         status = response.css(".status::text, .badge-status::text, .status .value::text").get()
         nft = response.css(".nft::text, .badge-nft::text, .nft .value::text").get()
-        f2p = response.css(".f2p::text, .badge-f2p::text, .f2p .value::text").get()
-        p2e = response.css(".p2e::text, .badge-p2e::text, .p2e .value::text").get()
+        f2p = response.css("a.buttonYes[aria-label*='Free-To-Play']::text").get()
+        if not f2p:
+            f2p_no = response.css("a.buttonNo[aria-label*='Free-To-Play']::text").get()
+            f2p = "No" if f2p_no else ""
+        else:
+            f2p = "Yes"
+        p2e = response.css("a.buttonYes[aria-label*='Play-To-Earn']::text").get()
+        if not p2e:
+            p2e_no = response.css("a.buttonNo[aria-label*='Play-To-Earn']::text").get()
+            p2e = "No" if p2e_no else ""
+        else:
+            p2e = "Yes"
         score = response.css(".p2e-score::text, .score::text, .p2eScore::text").get()
 
         def join_text(sel_list):
