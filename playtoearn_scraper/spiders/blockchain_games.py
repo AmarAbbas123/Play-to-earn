@@ -10,8 +10,8 @@ class BlockchainGamesSpider(scrapy.Spider):
         "FEED_FORMAT": "csv",
         "FEED_URI": "blockchain_games.csv",
         "FEED_EXPORT_FIELDS": [
-            "Name", "Description", "Category", "Blockchain", "Device",
-            "amar_device", "Status", "NFT", "F2P", "P2E", "P2E_Score"
+            "Name", "Description", "Category","Blockchain",  "Device",
+             "Status", "NFT", "F2P", "P2E", "P2E_Score"
         ],
         "ROBOTSTXT_OBEY": True,
         "DOWNLOAD_DELAY": 0.25,
@@ -21,7 +21,7 @@ class BlockchainGamesSpider(scrapy.Spider):
     }
 
     def start_requests(self):
-        for i in range(1, 61):
+        for i in range(1, 10):
             url = f"https://playtoearn.com/blockchaingames?p={i}"
             yield scrapy.Request(
                 url,
@@ -40,7 +40,7 @@ class BlockchainGamesSpider(scrapy.Spider):
         rows = response.css("tbody.__TableItemsSwiper tr")
         self.logger.info(f"Page URL: {response.url}, rows found: {len(rows)}")
 
-        for row in rows:
+        for row in rows[:10]:
             item = GameItem()
 
             # Name & Description
@@ -52,31 +52,46 @@ class BlockchainGamesSpider(scrapy.Spider):
             item["Category"] = ", ".join([c.strip() for c in categories if c.strip()])
 
             # Blockchain
-            blockchains = row.css("div.TableGameBlockchainItems a[aria-label]::attr(title)").getall()
-            item["Blockchain"] = ", ".join([b.strip() for b in blockchains if b.strip()])
+            first_device = row.css("div.TableGameBlockchainItems a[aria-label]::attr(title)").get(default="").strip()
+            item["Blockchain"] = first_device
 
             # Device
-            first_device = row.css("div.TableGameBlockchainItems a[aria-label]::attr(title)").get(default="").strip()
-            item["Device"] = first_device
+            all_data = row.css("div.TableGameBlockchainItems a[aria-label]::attr(title)").getall()
+            item["Device"] = ", ".join([d.strip() for d in all_data[1:]]) if len(all_data) > 1 else ""
+
+            
 
             # amar_device (all devices)
-            all_devices = row.css("div.TableGameBlockchainItems a[aria-label]::attr(title)").getall()
-            item["amar_device"] = ", ".join([d.strip() for d in all_devices if d.strip()])
+           # all_devices = row.css("div.TableGameBlockchainItems a[aria-label]::attr(title)").getall()
+           # item["amar_device"] = ", ".join([d.strip() for d in all_devices if d.strip()])
 
             # Status
-            item["Status"] = row.css("a.__ButtonStatusLive::text, a.__ButtonStatusDead::text").get(default="").strip()
+            status = row.css("a[class^='__ButtonStatus']::attr(aria-label)").get()
+            item["Status"] = (status or "").strip()
 
             # NFT
             nft = row.css("a[aria-label*='NFT']::attr(aria-label)").get()
             item["NFT"] = (nft or "").replace(" NFT Support", "").strip()
 
             # F2P
-            f2p = row.css("a[aria-label*='Free-To-Play']::attr(aria-label)").get()
-            item["F2P"] = (f2p or "").strip()
+            # F2P (only the allowed labels)
+            allowed_f2p = {
+                "free-to-play",
+                "crypto required",
+                "nft required",
+                "game required",
+            }
+
+            labels = row.css("a[aria-label]::attr(aria-label)").getall()
+            item["F2P"] = next(
+                (lab.strip() for lab in labels if lab and lab.strip().casefold() in allowed_f2p),
+                ""
+            )
+
 
             # P2E (multiple)
-            p2e = row.css("a[aria-label*='Play-To-Earn']::attr(aria-label)").getall()
-            item["P2E"] = ", ".join([p.strip() for p in p2e if p.strip()])
+            p2e = row.css("a[aria-label*='Play-To-Earn']::attr(aria-label)").get()
+            item["P2E"] = (p2e or "None").strip()
 
             # P2E Score
             item["P2E_Score"] = row.css("span.dailychangepercentage::text").get(default="").strip()
@@ -113,15 +128,8 @@ class BlockchainGamesSpider(scrapy.Spider):
             item["Description"] = " ".join([d.strip() for d in long_desc if d.strip()])
 
         # Blockchain from detail page
-        chains = response.css("div.TableGameBlockchainItems a[aria-label]::attr(title)").getall()
-        if chains:
-            item["Blockchain"] = ", ".join([c.strip() for c in chains if c.strip()])
-
-        # Devices and amar_device
-        devices = response.css("div.TableGameBlockchainItems a[aria-label]::attr(title)").getall()
-        if devices:
-            item["Device"] = ", ".join([d.strip() for d in devices if d.strip()])
-            item["amar_device"] = item["Device"]
+        
+      
 
         # Status
         status = response.css("a.__ButtonStatusLive::text, a.__ButtonStatusDead::text").get()
