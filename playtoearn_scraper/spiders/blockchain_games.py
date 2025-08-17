@@ -21,7 +21,7 @@ class BlockchainGamesSpider(scrapy.Spider):
     }
 
     def start_requests(self):
-        for i in range(1, 10):
+        for i in range(1,61):
             url = f"https://playtoearn.com/blockchaingames?p={i}"
             yield scrapy.Request(
                 url,
@@ -40,7 +40,7 @@ class BlockchainGamesSpider(scrapy.Spider):
         rows = response.css("tbody.__TableItemsSwiper tr")
         self.logger.info(f"Page URL: {response.url}, rows found: {len(rows)}")
 
-        for row in rows[:10]:
+        for row in rows:
             item = GameItem()
 
             # Name & Description
@@ -109,7 +109,7 @@ class BlockchainGamesSpider(scrapy.Spider):
                         "playwright_context": "default"
                     },
                     callback=self.parse_game,
-                    dont_filter=True
+                    
                 )
             else:
                 yield item
