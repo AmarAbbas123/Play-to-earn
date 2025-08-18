@@ -5,14 +5,13 @@ from playtoearn_scraper.items import GameItem
 class BlockchainGamesSpider(scrapy.Spider):
     name = "blockchain_games"
     allowed_domains = ["playtoearn.com"]
-    seen = set()  # Deduplicate by Name only
 
     custom_settings = {
         "FEED_FORMAT": "csv",
         "FEED_URI": "blockchain_games.csv",
         "FEED_EXPORT_FIELDS": [
             "Name", "Description", "Category","Blockchain",  "Device",
-            "Status", "NFT", "F2P", "P2E", "P2E_Score"
+             "Status", "NFT", "F2P", "P2E", "P2E_Score"
         ],
         "ROBOTSTXT_OBEY": True,
         "DOWNLOAD_DELAY": 0.25,
@@ -22,19 +21,20 @@ class BlockchainGamesSpider(scrapy.Spider):
     }
 
     def start_requests(self):
-        for i in range(1, 3):
+        for i in range(1,2):
             url = f"https://playtoearn.com/blockchaingames?p={i}"
             yield scrapy.Request(
                 url,
                 meta={
                     "playwright": True,
                     "playwright_page_methods": [
-                        ("wait_for_selector", "tbody.__TableItemsSwiper tr", {"timeout":15000})
+                        ("wait_for_selector", "tbody.__TableItemsSwiper tr")
                     ],
                     "playwright_context": "default",
                 },
                 callback=self.parse
             )
+
 
     def parse(self, response):
         rows = response.css("tbody.__TableItemsSwiper tr")
@@ -43,7 +43,7 @@ class BlockchainGamesSpider(scrapy.Spider):
         for row in rows:
             item = GameItem()
 
-            # Name & Description (table page)
+            # Name & Description
             item["Name"] = row.css("div.__TextViewGameContainer a.dapp_detaillink b::text").get(default="").strip()
             item["Description"] = row.css("div.__TextViewGameContainer > span::text").get(default="").strip()
 
@@ -51,10 +51,19 @@ class BlockchainGamesSpider(scrapy.Spider):
             categories = row.css("div.__TableCategoryTags div.__TagItem::text").getall()
             item["Category"] = ", ".join([c.strip() for c in categories if c.strip()])
 
-            # Blockchain & Device
+            # Blockchain
+            first_device = row.css("div.TableGameBlockchainItems a[aria-label]::attr(title)").get(default="").strip()
+            item["Blockchain"] = first_device
+
+            # Device
             all_data = row.css("div.TableGameBlockchainItems a[aria-label]::attr(title)").getall()
-            item["Blockchain"] = all_data[0].strip() if all_data else ""
             item["Device"] = ", ".join([d.strip() for d in all_data[1:]]) if len(all_data) > 1 else ""
+
+            
+
+            # amar_device (all devices)
+           # all_devices = row.css("div.TableGameBlockchainItems a[aria-label]::attr(title)").getall()
+           # item["amar_device"] = ", ".join([d.strip() for d in all_devices if d.strip()])
 
             # Status
             status = row.css("a[class^='__ButtonStatus']::attr(aria-label)").get()
@@ -65,11 +74,22 @@ class BlockchainGamesSpider(scrapy.Spider):
             item["NFT"] = (nft or "").replace(" NFT Support", "").strip()
 
             # F2P
-            allowed_f2p = {"free-to-play","crypto required","nft required","game required"}
-            labels = row.css("a[aria-label]::attr(aria-label)").getall()
-            item["F2P"] = next((lab.strip() for lab in labels if lab and lab.strip().casefold() in allowed_f2p), "")
+            # F2P (only the allowed labels)
+            allowed_f2p = {
+                "free-to-play",
+                "crypto required",
+                "nft required",
+                "game required",
+            }
 
-            # P2E
+            labels = row.css("a[aria-label]::attr(aria-label)").getall()
+            item["F2P"] = next(
+                (lab.strip() for lab in labels if lab and lab.strip().casefold() in allowed_f2p),
+                ""
+            )
+
+
+            # P2E (multiple)
             p2e = row.css("a[aria-label*='Play-To-Earn']::attr(aria-label)").get()
             item["P2E"] = (p2e or "None").strip()
 
@@ -85,35 +105,31 @@ class BlockchainGamesSpider(scrapy.Spider):
                     meta={
                         "item": item,
                         "playwright": True,
-                        "playwright_page_methods": [("wait_for_selector", "div.__TextViewGameContainer", {"timeout":10000})],
+                        "playwright_page_methods": [("wait_for_selector", "div.__TextViewGameContainer")],
                         "playwright_context": "default"
                     },
                     callback=self.parse_game,
                     dont_filter=True
                 )
             else:
-                # Deduplicate here too if table page has no detail link
-                if item["Name"] not in self.seen:
-                    self.seen.add(item["Name"])
-                    yield item
+                yield item
 
     def parse_game(self, response):
         item = response.meta["item"]
 
-        # Update Name from detail page
+        # Update Name if more detailed title exists
         name = response.css("h1::text, .game-title::text").get()
         if name:
             item["Name"] = name.strip()
-
-        # ✅ Skip duplicates by Name
-        if item["Name"] in self.seen:
-            return
-        self.seen.add(item["Name"])
 
         # Long description
         long_desc = response.css("div.game_desc p::text, div.game_desc::text").getall()
         if long_desc:
             item["Description"] = " ".join([d.strip() for d in long_desc if d.strip()])
+
+        # Blockchain from detail page
+        
+      
 
         # Status
         status = response.css("a.__ButtonStatusLive::text, a.__ButtonStatusDead::text").get()
