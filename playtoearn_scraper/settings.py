@@ -89,6 +89,8 @@ PLAYWRIGHT_LAUNCH_OPTIONS = {"headless": True}
 #HTTPCACHE_DIR = "httpcache"
 #HTTPCACHE_IGNORE_HTTP_CODES = []
 #HTTPCACHE_STORAGE = "scrapy.extensions.httpcache.FilesystemCacheStorage"
-
+ITEM_PIPELINES = {
+    "playtoearn_scraper.pipelines.DuplicatesPipeline": 300,
+}
 # Set settings whose default value is deprecated to a future-proof value
 FEED_EXPORT_ENCODING = "utf-8"
